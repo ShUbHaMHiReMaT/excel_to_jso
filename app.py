@@ -26,18 +26,15 @@ def convert():
         
         result = {}
         
-        # Use pandas with the ultra-fast Rust engine 'calamine' 
-        # This prevents Gunicorn from hitting a 30-second worker timeout
+        # Fast Rust-backed calamine parsing engine
         with pd.ExcelFile(file_stream, engine="calamine") as xls:
             for sheet_name in xls.sheet_names:
-                # Read sheet data and drop rows/columns that are entirely empty
                 df = pd.read_excel(xls, sheet_name=sheet_name)
-                df = df.dropna(how="all")
+                df = df.dropna(how="all") # drop empty rows
                 
-                # Convert timestamps/dates and NaN values gracefully to strings/nulls
+                # Turn NaN / null items cleanly into JSON-friendly null values
                 df = df.astype(object).where(pd.notnull(df), None)
                 
-                # Format to a standard list of dictionaries
                 result[sheet_name] = df.to_dict(orient="records")
 
         # Convert dictionary data to JSON string in memory
@@ -47,14 +44,15 @@ def convert():
         return_stream.write(json_data.encode("utf-8"))
         return_stream.seek(0)
 
+        # Added download_name explicitly so Flask can handle the byte stream download cleanly
         return send_file(
             return_stream,
             mimetype="application/json",
-            as_attachment=True
+            as_attachment=True,
+            download_name="converted_data.json"
         )
 
     except Exception as e:
-        # Capture error details to display on screen if parsing fails
         return f"Conversion error: {str(e)}", 500
 
 if __name__ == "__main__":
