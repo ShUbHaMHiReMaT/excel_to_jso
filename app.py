@@ -1,16 +1,10 @@
 from flask import Flask, render_template, request, send_file
 from openpyxl import load_workbook
 from werkzeug.utils import secure_filename
-import os
 import json
+import io
 
 app = Flask(__name__)
-
-UPLOAD_FOLDER = "uploads"
-OUTPUT_FOLDER = "outputs"
-
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 @app.route("/")
 def index():
@@ -18,68 +12,63 @@ def index():
 
 @app.route("/convert", methods=["POST"])
 def convert():
-
     if "file" not in request.files:
-        return "No file uploaded"
+        return "No file uploaded", 400
 
     file = request.files["file"]
 
     if file.filename == "":
-        return "No file selected"
+        return "No file selected", 400
 
-    filename = secure_filename(file.filename)
+    if file:
+        filename = secure_filename(file.filename)
+        base_filename = filename.rsplit(".", 1)[0]
+        json_filename = f"{base_filename}.json"
 
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
+        try:
+            # Read the uploaded file directly into memory
+            file_stream = io.BytesIO(file.read())
+            workbook = load_workbook(file_stream, data_only=True)
+            
+            result = {}
 
-    file.save(filepath)
+            for sheet_name in workbook.sheetnames:
+                sheet = workbook[sheet_name]
+                rows = list(sheet.values)
 
-    workbook = load_workbook(filepath)
+                if not rows:
+                    continue
 
-    result = {}
+                headers = rows[0]
+                data = []
 
-    for sheet_name in workbook.sheetnames:
+                for row in rows[1:]:
+                    item = {}
+                    for header, value in zip(headers, row):
+                        if header is not None:
+                            item[str(header)] = value
+                    data.append(item)
 
-        sheet = workbook[sheet_name]
+                result[sheet_name] = data
 
-        rows = list(sheet.values)
+            # Convert the result dictionary to a JSON string in memory
+            json_data = json.dumps(result, indent=4, default=str)
+            
+            # Create an in-memory file stream for the JSON data
+            return_stream = io.BytesIO()
+            return_stream.write(json_data.encode("utf-8"))
+            return_stream.seek(0) # Reset stream pointer to the beginning
 
-        if not rows:
-            continue
+            # Download the file instantly instead of reloading the page
+            return send_file(
+                return_stream,
+                mimetype="application/json",
+                as_attachment=True,
+                download_name=json_filename
+            )
 
-        headers = rows[0]
-
-        data = []
-
-        for row in rows[1:]:
-
-            item = {}
-
-            for header, value in zip(headers, row):
-                item[str(header)] = value
-
-            data.append(item)
-
-        result[sheet_name] = data
-
-    json_filename = filename.rsplit(".", 1)[0] + ".json"
-
-    json_path = os.path.join(OUTPUT_FOLDER, json_filename)
-
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(result, f, indent=4, default=str)
-
-    return render_template(
-        "index.html",
-        download_ready=True,
-        download_file=json_filename
-    )
-
-@app.route("/download/<filename>")
-def download(filename):
-    return send_file(
-        os.path.join(OUTPUT_FOLDER, filename),
-        as_attachment=True
-    )
+        except Exception as e:
+            return f"An error occurred during conversion: {str(e)}", 500
 
 if __name__ == "__main__":
     app.run()
