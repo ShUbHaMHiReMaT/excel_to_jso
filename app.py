@@ -1,6 +1,5 @@
 from flask import Flask, render_template, request, send_file
 from openpyxl import load_workbook
-from werkzeug.utils import secure_filename
 import json
 import io
 
@@ -20,55 +19,45 @@ def convert():
     if file.filename == "":
         return "No file selected", 400
 
-    if file:
-        filename = secure_filename(file.filename)
-        base_filename = filename.rsplit(".", 1)[0]
-        json_filename = f"{base_filename}.json"
+    try:
+        # Read file directly from stream
+        file_stream = io.BytesIO(file.read())
+        workbook = load_workbook(file_stream, data_only=True)
+        
+        result = {}
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            rows = list(sheet.values)
 
-        try:
-            # Read the uploaded file directly into memory
-            file_stream = io.BytesIO(file.read())
-            workbook = load_workbook(file_stream, data_only=True)
-            
-            result = {}
+            if not rows:
+                continue
 
-            for sheet_name in workbook.sheetnames:
-                sheet = workbook[sheet_name]
-                rows = list(sheet.values)
+            headers = rows[0]
+            data = []
 
-                if not rows:
-                    continue
+            for row in rows[1:]:
+                item = {}
+                for header, value in zip(headers, row):
+                    if header is not None:
+                        item[str(header)] = value
+                data.append(item)
 
-                headers = rows[0]
-                data = []
+            result[sheet_name] = data
 
-                for row in rows[1:]:
-                    item = {}
-                    for header, value in zip(headers, row):
-                        if header is not None:
-                            item[str(header)] = value
-                    data.append(item)
+        # Write to memory stream
+        json_data = json.dumps(result, indent=4, default=str)
+        return_stream = io.BytesIO()
+        return_stream.write(json_data.encode("utf-8"))
+        return_stream.seek(0)
 
-                result[sheet_name] = data
+        return send_file(
+            return_stream,
+            mimetype="application/json",
+            as_attachment=True
+        )
 
-            # Convert the result dictionary to a JSON string in memory
-            json_data = json.dumps(result, indent=4, default=str)
-            
-            # Create an in-memory file stream for the JSON data
-            return_stream = io.BytesIO()
-            return_stream.write(json_data.encode("utf-8"))
-            return_stream.seek(0) # Reset stream pointer to the beginning
-
-            # Download the file instantly instead of reloading the page
-            return send_file(
-                return_stream,
-                mimetype="application/json",
-                as_attachment=True,
-                download_name=json_filename
-            )
-
-        except Exception as e:
-            return f"An error occurred during conversion: {str(e)}", 500
+    except Exception as e:
+        return f"Conversion error: {str(e)}", 500
 
 if __name__ == "__main__":
     app.run()

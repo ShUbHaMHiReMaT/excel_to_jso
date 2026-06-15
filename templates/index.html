@@ -1,17 +1,20 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Excel to JSON Converter</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             text-align: center;
-            margin-top: 50px;
+            margin: 0;
+            padding: 50px 20px;
             background: #f4f4f4;
         }
 
         .container {
-            width: 500px;
+            max-width: 500px;
             margin: auto;
             background: white;
             padding: 30px;
@@ -21,24 +24,46 @@
 
         h2 {
             color: #333;
+            margin-bottom: 10px;
+        }
+
+        p {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 20px;
         }
 
         input[type=file] {
-            margin: 20px;
+            margin: 20px 0;
+            width: 100%;
+            box-sizing: border-box;
         }
 
         button {
-            padding: 10px 20px;
+            padding: 12px 24px;
             background: #007bff;
             color: white;
             border: none;
             border-radius: 5px;
             cursor: pointer;
             font-size: 16px;
+            width: 100%;
+            font-weight: bold;
         }
 
         button:hover {
             background: #0056b3;
+        }
+
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+
+        #status {
+            margin-top: 15px;
+            font-weight: bold;
+            font-size: 14px;
         }
     </style>
 </head>
@@ -46,14 +71,85 @@
 
 <div class="container">
     <h2>Excel to JSON Converter</h2>
-    <p style="color: #666; font-size: 14px;">Upload your Excel sheet and it will instantly convert and download as a JSON file.</p>
+    <p>Upload your Excel sheet (.xlsx, .xls) to instantly convert and download it as JSON.</p>
 
-    <form action="/convert" method="post" enctype="multipart/form-data">
-        <input type="file" name="file" accept=".xlsx,.xls" required>
+    <form id="uploadForm">
+        <input type="file" id="fileInput" name="file" accept=".xlsx,.xls" required>
         <br>
-        <button type="submit">Convert & Download JSON</button>
+        <button type="submit" id="submitBtn">Convert & Download JSON</button>
     </form>
+
+    <div id="status"></div>
 </div>
+
+<script>
+    document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+        e.preventDefault(); // Stop page refresh
+
+        const fileInput = document.getElementById('fileInput');
+        const submitBtn = document.getElementById('submitBtn');
+        const statusDiv = document.getElementById('status');
+
+        if (!fileInput.files.length) {
+            statusDiv.style.color = "red";
+            statusDiv.innerText = "Please select a file first.";
+            return;
+        }
+
+        const file = fileInput.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+
+        // Update UI to show processing state
+        submitBtn.disabled = true;
+        submitBtn.innerText = "Converting...";
+        statusDiv.style.color = "#333";
+        statusDiv.innerText = "Processing your file...";
+
+        try {
+            const response = await fetch('/convert', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(errorText || "Conversion failed.");
+            }
+
+            // Read response as a file blob
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            
+            // Create a temporary hidden link to trigger download safely on mobile
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            
+            // Generate the output filename
+            const originalName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+            a.download = `${originalName}.json`;
+            
+            document.body.appendChild(a);
+            a.click(); // Trigger download
+            
+            // Clean up
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            statusDiv.style.color = "green";
+            statusDiv.innerText = "Success! Your download has started.";
+
+        } catch (error) {
+            statusDiv.style.color = "red";
+            statusDiv.innerText = `Error: ${error.message}`;
+        } finally {
+            // Restore button state
+            submitBtn.disabled = false;
+            submitBtn.innerText = "Convert & Download JSON";
+        }
+    });
+</script>
 
 </body>
 </html>
