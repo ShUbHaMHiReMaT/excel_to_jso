@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, send_file
-from openpyxl import load_workbook
+import pandas as pd
 import json
 import io
 
@@ -20,32 +20,29 @@ def convert():
         return "No file selected", 400
 
     try:
-        # Read file directly from stream
-        file_stream = io.BytesIO(file.read())
-        workbook = load_workbook(file_stream, data_only=True)
+        # Read file directly from stream into memory
+        file_bytes = file.read()
+        file_stream = io.BytesIO(file_bytes)
         
         result = {}
-        for sheet_name in workbook.sheetnames:
-            sheet = workbook[sheet_name]
-            rows = list(sheet.values)
+        
+        # Use pandas with the ultra-fast Rust engine 'calamine' 
+        # This prevents Gunicorn from hitting a 30-second worker timeout
+        with pd.ExcelFile(file_stream, engine="calamine") as xls:
+            for sheet_name in xls.sheet_names:
+                # Read sheet data and drop rows/columns that are entirely empty
+                df = pd.read_excel(xls, sheet_name=sheet_name)
+                df = df.dropna(how="all")
+                
+                # Convert timestamps/dates and NaN values gracefully to strings/nulls
+                df = df.astype(object).where(pd.notnull(df), None)
+                
+                # Format to a standard list of dictionaries
+                result[sheet_name] = df.to_dict(orient="records")
 
-            if not rows:
-                continue
-
-            headers = rows[0]
-            data = []
-
-            for row in rows[1:]:
-                item = {}
-                for header, value in zip(headers, row):
-                    if header is not None:
-                        item[str(header)] = value
-                data.append(item)
-
-            result[sheet_name] = data
-
-        # Write to memory stream
+        # Convert dictionary data to JSON string in memory
         json_data = json.dumps(result, indent=4, default=str)
+        
         return_stream = io.BytesIO()
         return_stream.write(json_data.encode("utf-8"))
         return_stream.seek(0)
@@ -57,6 +54,7 @@ def convert():
         )
 
     except Exception as e:
+        # Capture error details to display on screen if parsing fails
         return f"Conversion error: {str(e)}", 500
 
 if __name__ == "__main__":
