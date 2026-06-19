@@ -2,68 +2,110 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Excel to JSON Converter</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             text-align: center;
             margin: 0;
-            padding: 50px 20px;
-            background: #f4f4f4;
+            padding: 30px 15px;
+            background: #f8f9fa;
+            color: #333;
         }
 
         .container {
-            max-width: 500px;
+            max-width: 480px;
             margin: auto;
             background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            padding: 35px 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            box-sizing: border-box;
         }
 
         h2 {
-            color: #333;
-            margin-bottom: 10px;
+            margin-top: 0;
+            color: #222;
+            font-size: 24px;
         }
 
         p {
             color: #666;
             font-size: 14px;
-            margin-bottom: 20px;
+            line-height: 1.5;
+            margin-bottom: 25px;
+        }
+
+        /* Styled touch-friendly input zone */
+        .file-drop-area {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 25px 10px;
+            border: 2px dashed #007bff;
+            border-radius: 8px;
+            background-color: #f0f7ff;
+            cursor: pointer;
+            box-sizing: border-box;
+            margin-bottom: 25px;
+            transition: background 0.2s ease;
+        }
+
+        .file-drop-area:active {
+            background-color: #e1f0ff;
         }
 
         input[type=file] {
-            margin: 20px 0;
+            position: absolute;
+            left: 0;
+            top: 0;
+            opacity: 0;
             width: 100%;
-            box-sizing: border-box;
+            height: 100%;
+            cursor: pointer;
+        }
+
+        .file-msg {
+            font-size: 15px;
+            color: #0056b3;
+            font-weight: 500;
+            word-break: break-all;
         }
 
         button {
-            padding: 12px 24px;
+            padding: 14px 24px;
             background: #007bff;
             color: white;
             border: none;
-            border-radius: 5px;
+            border-radius: 6px;
             cursor: pointer;
             font-size: 16px;
             width: 100%;
             font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,123,255,0.2);
+            -webkit-tap-highlight-color: transparent;
+            transition: background 0.15s ease;
         }
 
-        button:hover {
+        button:active {
             background: #0056b3;
         }
 
         button:disabled {
             background: #cccccc;
+            box-shadow: none;
             cursor: not-allowed;
         }
 
         #status {
-            margin-top: 15px;
-            font-weight: bold;
+            margin-top: 20px;
+            font-weight: 600;
             font-size: 14px;
+            line-height: 1.4;
+            word-break: break-word;
         }
     </style>
 </head>
@@ -71,11 +113,13 @@
 
 <div class="container">
     <h2>Excel to JSON Converter</h2>
-    <p>Upload your Excel sheet (.xlsx, .xls) to instantly convert and download it as JSON.</p>
+    <p>Upload your Excel sheet (.xlsx, .xls) to instantly convert and download it as a JSON file right onto your device.</p>
 
     <form id="uploadForm">
-        <input type="file" id="fileInput" name="file" accept=".xlsx,.xls" required>
-        <br>
+        <div class="file-drop-area">
+            <span class="file-msg" id="fileMessage">Tap here to choose Excel file</span>
+            <input type="file" id="fileInput" name="file" accept=".xlsx,.xls" required>
+        </div>
         <button type="submit" id="submitBtn">Convert & Download JSON</button>
     </form>
 
@@ -83,15 +127,28 @@
 </div>
 
 <script>
-    document.getElementById('uploadForm').addEventListener('submit', async function(e) {
-        e.preventDefault(); // Stop page refresh
+    const fileInput = document.getElementById('fileInput');
+    const fileMessage = document.getElementById('fileMessage');
+    const uploadForm = document.getElementById('uploadForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const statusDiv = document.getElementById('status');
 
-        const fileInput = document.getElementById('fileInput');
-        const submitBtn = document.getElementById('submitBtn');
-        const statusDiv = document.getElementById('status');
+    // Dynamically update the filename on screen when chosen via mobile system explorer
+    fileInput.addEventListener('change', function() {
+        if (fileInput.files.length > 0) {
+            fileMessage.innerText = "Selected: " + fileInput.files[0].name;
+            fileMessage.style.color = "#28a745";
+        } else {
+            fileMessage.innerText = "Tap here to choose Excel file";
+            fileMessage.style.color = "#0056b3";
+        }
+    });
+
+    uploadForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
 
         if (!fileInput.files.length) {
-            statusDiv.style.color = "red";
+            statusDiv.style.color = "#dc3545";
             statusDiv.innerText = "Please select a file first.";
             return;
         }
@@ -100,11 +157,11 @@
         const formData = new FormData();
         formData.append('file', file);
 
-        // Update UI to show processing state
+        // Lock button, prevent double submit on slow connections
         submitBtn.disabled = true;
-        submitBtn.innerText = "Converting...";
-        statusDiv.style.color = "#333";
-        statusDiv.innerText = "Processing your file...";
+        submitBtn.innerText = "Converting data...";
+        statusDiv.style.color = "#495057";
+        statusDiv.innerText = "Processing inside memory engine...";
 
         try {
             const response = await fetch('/convert', {
@@ -114,37 +171,35 @@
 
             if (!response.ok) {
                 const errorText = await response.text();
-                throw new Error(errorText || "Conversion failed.");
+                throw new Error(errorText || "Conversion step failed.");
             }
 
-            // Read response as a file blob
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             
-            // Create a temporary hidden link to trigger download safely on mobile
+            // Build absolute container reference to pass mobile browser security contexts
             const a = document.createElement('a');
-            a.style.display = 'none';
             a.href = url;
             
-            // Generate the output filename
             const originalName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
             a.download = `${originalName}.json`;
             
             document.body.appendChild(a);
-            a.click(); // Trigger download
+            a.click();
             
-            // Clean up
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
+            // Cleanup memory pointers
+            setTimeout(() => {
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            }, 100);
 
-            statusDiv.style.color = "green";
-            statusDiv.innerText = "Success! Your download has started.";
+            statusDiv.style.color = "#28a745";
+            statusDiv.innerText = "Success! JSON generated and downloaded.";
 
         } catch (error) {
-            statusDiv.style.color = "red";
-            statusDiv.innerText = `Error: ${error.message}`;
+            statusDiv.style.color = "#dc3545";
+            statusDiv.innerText = `${error.message}`;
         } finally {
-            // Restore button state
             submitBtn.disabled = false;
             submitBtn.innerText = "Convert & Download JSON";
         }
